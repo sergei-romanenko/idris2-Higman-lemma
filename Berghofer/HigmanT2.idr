@@ -1,5 +1,5 @@
 {-
-    Title:      Berghofer.Higman.idr
+    Title:      Berghofer.HigmanT2
     Author:     Sergei Romanenko, KIAM Moscow
 
     This version is produced by rewriting the proof presented in
@@ -8,10 +8,10 @@
       In Types for Proofs and Programs, TYPES'04. LNCS, 3085: 66-82.
       Springer Verlag, 2004. 
 
-    from Isabelle to Idris 2.
+    from Isabelle to Agda.
 -}
 
-module Berghofer.Higman
+module Berghofer.HigmanT2
 
 import Data.List
 import Decidable.Equality
@@ -32,7 +32,7 @@ Word = List Letter
 -- Intuitively, a word `v` can be embedded into a word `w`,
 -- if we can obtain `v` by deleting letters from `w`.
 -- For example,
---   L1 :: L0 :: L1 :: [] << L0 :: L1 :: L0 :: L0 :: L1 :: []
+--   L1 :: L0 :: L1 :: [] ⊴ L0 :: L1 :: L0 :: L0 :: L1 :: []
 
 infix 6 <<, *<<
 
@@ -45,7 +45,6 @@ namespace TestEmb
 
   test1 : L1 :: L0 :: L1 :: [] << L0 :: L1 :: L0 :: L0 :: L1 :: []
   test1 = Drop (Keep (Drop (Keep (Keep Empty))))
-
 
 -- [] is embeddable in any word.
 
@@ -108,46 +107,35 @@ infixr 7 ::*
 a ::* [] = []
 a ::* (w :: ws) = (a :: w) :: (a ::* ws)
 
--- Inequality of letters.
+namespace Berghofer's_T
 
-infix 6 <>
+  -- This is the relation `T`, used in the original Berghofer's proof.
 
-data (<>) : (x, y : Letter) -> Type where
-  L0neL1 : L0 <> L1
-  L1neL0 : L1 <> L0
+  -- `T a vs ws` means that vs is obtained from ws by
+  -- (1) first copying the prefix of words starting with the letter b,
+  --     where Not(a = b), and
+  -- (2) then appending the tails of words starting with a.
 
-l_sym : x <> y -> y <> x
-l_sym L0neL1 = L1neL0
-l_sym L1neL0 = L0neL1
+  data T : (a : Letter) -> (vs, ws : Seq) -> Type where
+    TInit : Not(a = b) ->
+              T a (w ::(b ::* ws)) ((a :: w) :: (b ::* ws))
+    TKeep : T a vs ws ->
+              T a (w :: vs) ((a :: w) :: ws)
+    TDrop : Not(a = b) ->
+              T a vs ws -> T a vs ((b :: w) :: ws)
 
-l_eq'ne : (x, y : Letter) -> (x = y) `Either` (x <> y)
-l_eq'ne L0 L0 = Left Refl
-l_eq'ne L0 L1 = Right L0neL1
-l_eq'ne L1 L0 = Right L1neL0
-l_eq'ne L1 L1 = Left Refl
+-- In Berghofer's proof `T` is always used as a comination
+--   `T a xs zs -> T b ys zs -> ...`
+-- So, we can simplify the proof by directly defining a relation T2, such that
+-- `T2 xs ys zs` is equivalent to `(T a xs zs, T a xs zs)`.
 
---
--- Dirichlet's (pigeonhole) principle for 2 holes.
---
+-- The relation `T2` is the result of com
 
-dirichlet2 : x <> y -> (z : Letter) -> Either(z = x) (z = y)
-dirichlet2 L0neL1 L0 = Left Refl
-dirichlet2 L0neL1 L1 = Right Refl
-dirichlet2 L1neL0 L0 = Right Refl
-dirichlet2 L1neL0 L1 = Left Refl
-
--- `T a ws vs` means that vs is obtained from ws by
--- (1) first copying the prefix of words starting with the letter b,
---     where a <> b, and
--- (2) then appending the tails of words starting with a.
-
-data T : (a : Letter) -> (vs, ws : Seq) -> Type where
-  TInit : a <> b ->
-            T a ((a :: w) :: (b ::* ws)) (w ::(b ::* ws))
-  TKeep : T a ws vs ->
-            T a ((a :: w) :: ws) (w :: vs)
-  TDrop : a <> b ->
-            T a ws vs -> T a ((b :: w) :: ws) vs
+data T2 : (zs, xs, ys : Seq) -> Type where
+  Init0 : T2 (w :: (L1 ::* ys)) ys ((L0 :: w) :: (L1 ::* ys))
+  Init1 : T2 xs (w :: (L0 ::* xs)) ((L1 :: w) :: (L0 ::* xs))
+  Step0 : T2 xs ys zs -> T2 (w :: xs) ys ((L0 :: w) :: zs)
+  Step1 : T2 xs ys zs -> T2 xs (w :: ys) ((L1 :: w) :: zs)
 
 --
 -- The proof of Higman’s lemma is divided into several parts, namely
@@ -179,17 +167,34 @@ s_emb_keep (EHere w_emb_v) = EHere (Keep w_emb_v)
 s_emb_keep (EThere ws_s_emb_v) = EThere (s_emb_keep ws_s_emb_v)
 
 %hint
-t_s_emb_drop : T a ws vs -> vs *<< v -> ws *<< a :: v
-t_s_emb_drop (TInit a_ne_b) (EHere here) =
-  EHere (Keep here)
-t_s_emb_drop (TInit a_ne_b) (EThere there) =
-  EThere (s_emb_drop there)
-t_s_emb_drop (TKeep keep) (EHere here) =
-  EHere (Keep here)
-t_s_emb_drop (TKeep keep) (EThere there) =
-  EThere (t_s_emb_drop keep there)
-t_s_emb_drop (TDrop a_ne_b drop) vs_s_emb_v =
-  EThere (t_s_emb_drop drop vs_s_emb_v)
+t2_semb_drop0 : T2 xs ys zs -> xs *<< w -> zs *<< L0 :: w
+t2_semb_drop0 Init0 (EHere emb_w) =
+  EHere (Keep emb_w)
+t2_semb_drop0 Init0 (EThere semb_w) =
+  EThere (s_emb_drop semb_w)
+t2_semb_drop0 Init1 semb_w =
+  EThere (s_emb_keep semb_w)
+t2_semb_drop0 (Step0 t2) (EHere emb_w) =
+  EHere (Keep emb_w)
+t2_semb_drop0 (Step0 t2) (EThere semb_w) =
+  EThere (t2_semb_drop0 t2 semb_w)
+t2_semb_drop0 (Step1 t2) semb_w =
+  EThere (t2_semb_drop0 t2 semb_w)
+
+%hint
+t2_semb_drop1 : T2 xs ys zs -> ys *<< w -> zs *<< L1 :: w
+t2_semb_drop1 Init0 semb_w =
+  EThere (s_emb_keep semb_w)
+t2_semb_drop1 Init1 (EHere emb_w) =
+  EHere (Keep emb_w)
+t2_semb_drop1 Init1 (EThere semb_w) =
+  EThere (s_emb_drop semb_w)
+t2_semb_drop1 (Step0 t2) semb_w =
+  EThere (t2_semb_drop1 t2 semb_w)
+t2_semb_drop1 (Step1 t2) (EHere emb_w) =
+  EHere (Keep emb_w)
+t2_semb_drop1 (Step1 t2) (EThere emb_w) =
+  EThere (t2_semb_drop1 t2 emb_w)
 
 -- Lemmas. Good ... -> Good ...
 
@@ -201,29 +206,35 @@ good_drop (There good_ws) =
   There (good_drop good_ws)
 
 %hint
-good_t : T a ws vs -> Good vs -> Good ws
-good_t (TInit a_ne_b) (Here here) =
-  Here (s_emb_drop here)
-good_t (TInit a_ne_b) (There there) =
-  There there
-good_t (TKeep keep) (Here here) =
-  Here (t_s_emb_drop keep here)
-good_t (TKeep keep) (There there) =
-  There (good_t keep there)
-good_t (TDrop a_ne_b t) good_vs =
-  There (good_t t good_vs)
+good_t0 : T2 xs ys zs -> Good xs -> Good zs
+good_t0 Init0 (Here semb_w) =
+  Here (s_emb_drop semb_w)
+good_t0 Init0 (There good_l1ys) =
+  There good_l1ys
+good_t0 Init1 gx =
+  There (good_drop gx)
+good_t0 (Step0 t2) (Here semb_w) =
+  Here (t2_semb_drop0 t2 semb_w)
+good_t0 (Step0 t2) (There gx) =
+  There (good_t0 t2 gx)
+good_t0 (Step1 t2) gx =
+  There (good_t0 t2 gx)
 
--- Lemma. T a (a ::* ...) (...)
 
 %hint
-t_extend : (a : _) -> (ws : _) -> NonEmpty ws -> T a (a ::* ws) ws
-t_extend _ [] IsNonEmpty impossible
-t_extend a (v :: (w :: ws)) ne_ws =
-  TKeep (t_extend a (w :: ws) IsNonEmpty)
-t_extend L0 (v :: []) ne_ws =
-  TInit {b = L1} {ws = []} L0neL1
-t_extend L1 (v :: []) ne_ws =
-  TInit {b = L0} {ws = []} L1neL0
+good_t1 : T2 xs ys zs -> Good ys -> Good zs
+good_t1 Init0 gy =
+  There (good_drop gy)
+good_t1 Init1 (Here semb_w) =
+  Here (s_emb_drop semb_w)
+good_t1 Init1 (There good_l0xs) =
+  There good_l0xs
+good_t1 (Step0 t2) gy =
+  There (good_t1 t2 gy)
+good_t1 (Step1 t2) (Here semb_w) =
+  good_t1 (Step1 t2) (Here semb_w)
+good_t1 (Step1 t2) (There gy) =
+  There (good_t1 t2 gy)
 
 --
 -- prop2 : Interleaving two trees
@@ -233,67 +244,42 @@ t_extend L1 (v :: []) ne_ws =
 
 mutual
 
-  tt_bb : {a, b : _} -> {zs, xs, ys : _} ->
-    a <> b -> T a zs xs -> T b zs ys ->
-    Bar xs -> Bar ys ->
-    Bar zs
-  tt_bb a_ne_b ta tb (Now nx) bar_ys =
-    Now (good_t ta nx)
-  tt_bb a_ne_b ta tb (Later lx) (Now ny) =
-    Now (good_t tb ny)
-  tt_bb a_ne_b ta tb (Later lx) (Later ly) =
-    Later $ tt_ll (Later lx) (Later ly) ItIsLater ItIsLater a_ne_b ta tb
+  tt_bb : {zs, xs, ys : _} -> T2 xs ys zs -> Bar xs -> Bar ys -> Bar zs
+  tt_bb t (Now nx) ny = Now (good_t0 t nx)
+  tt_bb t (Later lx) (Now ny) = Now (good_t1 t ny)
+  tt_bb t (Later lx) (Later ly) =
+    Later $ tt_ll t (Later lx) (Later ly) ItIsLater ItIsLater
 
-  tt_ll : {a, b : _} -> {zs, xs, ys : _} ->
-    (b_xs : Bar xs) -> (b_ys : Bar ys) -> IsLater b_xs -> IsLater b_ys ->
-    a <> b -> T a zs xs -> T b zs ys -> (w : Word) ->
-    Bar (w :: zs)
-  tt_ll (Later lx) (Later ly) ItIsLater ItIsLater a_ne_b ta tb [] =
-    bar_w_empty zs
-  tt_ll (Later lx) (Later ly) ItIsLater ItIsLater a_ne_b ta tb (c :: v) =
-    case dirichlet2 a_ne_b c of
-      Left c_eq_a => rewrite c_eq_a in
-        the (Bar ((a :: v) :: zs)) $
-        tt_bb a_ne_b (TKeep ta) (TDrop (l_sym a_ne_b) tb) (lx v) (Later ly) -- ===
-      Right c_eq_b => rewrite c_eq_b in
-        the (Bar ((b :: v) :: zs)) $
-        tt_bb a_ne_b (TDrop a_ne_b ta) (TKeep tb) (Later lx) (ly v) -- ===
+  tt_ll : {zs, xs, ys : _} -> T2 xs ys zs ->
+    (b_x : Bar xs) -> (b_y : Bar ys) -> IsLater b_x -> IsLater b_y ->
+    (w : Word) -> Bar (w :: zs)
+  tt_ll t (Later lx) (Later ly) ItIsLater ItIsLater v = case v of
+    [] => bar_w_empty zs
+    (L0 :: w) => tt_bb (Step0 t) (lx w) (Later ly)
+    (L1 :: w) => tt_bb (Step1 t) (Later lx) (ly w)
 
 --
 -- prop3 : Lifting to longer words
 --
 -- Proof idea: Induction on Bar ws, then induction on first word following ws
+--
 
 mutual
 
-  bar_lift : (b, ws : _) -> NonEmpty ws -> Bar ws -> Bar (b ::* ws)
-  bar_lift b ws ne_ws (Now n) =
-    Now (good_drop n)
-  bar_lift b ws ne_ws (Later l) =
-    Later $ later_lift b ws ne_ws (Later l) ItIsLater
+  bar_lift : (b, ws : _) -> Bar ws -> Bar (b ::* ws)
+  bar_lift b ws (Now n) = Now (good_drop n)
+  bar_lift b ws (Later l) = Later (later_lift b ws (Later l) ItIsLater)
 
-  later_lift : (b, ws : _) -> NonEmpty ws ->
-    (b_ws : Bar ws) -> IsLater b_ws ->
-    (w : Word) -> Bar (w :: (b ::* ws))
-  later_lift b ws ne_ws (Later l) ItIsLater [] =
-    bar_w_empty (b ::* ws)
-  later_lift b ws ne_ws (Later l) ItIsLater (a :: w) =
-    either
-      (\a_eq_b =>
-        the (Bar ((a :: w) :: (b ::* ws))) $
-        replace {p = \t => Bar ((t :: w) :: (b ::* ws))} (sym a_eq_b) $
-        the (Bar (b ::* (w :: ws))) $
-        bar_lift b (w :: ws) IsNonEmpty (l w) -- ===
-        )
-      (\a_ne_b =>
-        the (Bar ((a :: w) :: (b ::* ws))) $
-        tt_bb
-          a_ne_b
-          (TInit a_ne_b)
-          (TDrop (l_sym a_ne_b) (t_extend b ws ne_ws))
-          (later_lift b ws ne_ws (Later l) ItIsLater w) -- ===
-          (Later l))
-      (l_eq'ne a b)
+  later_lift : (b, ws : _) -> (bw : Bar ws) -> IsLater bw ->
+    (w : _) -> Bar (w :: (b ::* ws))
+  later_lift L0 ws (Later l) ItIsLater v = case v of
+    [] => bar_w_empty (L0 ::* ws)
+    (L0 :: w) => bar_lift L0 (w :: ws) (l w) -- ===
+    (L1 :: w) => tt_bb Init1 (Later l) (later_lift L0 ws (Later l) ItIsLater w)
+  later_lift L1 ws (Later l) ItIsLater v = case v of
+    [] => bar_w_empty (L1 ::* ws)
+    (L0 :: w) => tt_bb Init0 (later_lift L1 ws (Later l) ItIsLater w) (Later l)
+    (L1 :: w) => bar_lift L1 (w :: ws) (l w) -- ===
 
 --
 -- higman: Main theorem
@@ -302,7 +288,7 @@ mutual
 later_empty :  (w : Word) -> Bar (w :: [])
 later_empty [] = bar_w_empty []
 later_empty (c :: w) =
-  bar_lift c (w :: []) IsNonEmpty (later_empty w)
+  bar_lift c (w :: []) (later_empty w)
 
 bar_empty : Bar []
 bar_empty = Later later_empty
@@ -316,7 +302,7 @@ higman [] = bar_empty
 higman (w :: ws) = bar_ne w ws (higman ws)
 
 --
--- good_prefix-lemma
+-- good-prefix-lemma
 --
 
 data Prefix : (f : Nat -> Word) -> (Nat, Seq) -> Type where
@@ -332,9 +318,8 @@ good_prefix' f s p (Now n) =
 good_prefix' f (i, ws) p (Later l) =
   good_prefix' f (S i, f i :: ws) (PS p) (l (f i))
 
---
+
 -- Finding good prefixes of infinite sequences
---
 
 good_prefix : (f : Nat -> Word) ->
   (s ** (Prefix f s, Good (snd s)))

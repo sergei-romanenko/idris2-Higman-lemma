@@ -52,7 +52,7 @@ namespace TestEmb
 %hint
 emb_empty : (w : _) -> [] << w
 emb_empty [] = Empty
-emb_empty (w :: ws) = Drop (emb_empty ws)
+emb_empty (a :: w) = Drop (emb_empty w)
 
 -- We represent a finite sequence w_0, w_1, ... , w_n as
 --   w_n :: ... :: w_1 :: w_0 :: []
@@ -283,8 +283,7 @@ mutual
         the (Bar ((a :: w) :: (b ::* ws))) $
         replace {p = \t => Bar ((t :: w) :: (b ::* ws))} (sym a_eq_b) $
         the (Bar (b ::* (w :: ws))) $
-        bar_lift b (w :: ws) IsNonEmpty (l w) -- ===
-        )
+        bar_lift b (w :: ws) IsNonEmpty (l w)) -- ===
       (\a_ne_b =>
         the (Bar ((a :: w) :: (b ::* ws))) $
         tt_bb
